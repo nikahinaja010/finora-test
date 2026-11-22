@@ -24,6 +24,14 @@ import type {
   GoalsContext,
   DataSufficiency,
 } from "./types.ts";
+import {
+  buildFinancialIntelligence,
+} from "./intelligence.ts";
+import type {
+  IntelligenceTxRow,
+  IntelligenceBudgetItem,
+  IntelligenceGoalItem,
+} from "./intelligence.ts";
 
 interface AssessmentRow {
   monthly_income: number | string;
@@ -91,6 +99,12 @@ export async function buildFinancialContext(
 ): Promise<FinancialContext> {
   const now = new Date();
   const currentMonthKey = monthKeyOf(now);
+  // 6-month analysis window for the Financial Intelligence Engine: first day
+  // of the month 5 months back, so the window spans 6 calendar months.
+  const windowStartDate = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+  const sixMonthWindowStart = `${windowStartDate.getFullYear()}-${String(
+    windowStartDate.getMonth() + 1
+  ).padStart(2, "0")}-01`;
 
   const [assessmentRes, txRes, budgetRes, debtRes, goalRes] = await Promise.all([
     adminClient
@@ -105,9 +119,9 @@ export async function buildFinancialContext(
       .from("transactions")
       .select("type, category, amount, transaction_date")
       .eq("user_id", userId)
-      .gte("transaction_date", `${currentMonthKey}-01`)
+      .gte("transaction_date", sixMonthWindowStart)
       .order("transaction_date", { ascending: false })
-      .limit(500),
+      .limit(2000),
     adminClient
       .from("budgets")
       .select("category, limit_amount")
@@ -246,6 +260,44 @@ export async function buildFinancialContext(
     items: goalItems,
   };
 
+  // ─── Intelligence Engine: deterministic analysis over real history ──
+  const intelligenceTxRows: IntelligenceTxRow[] = (txRes.data ?? []).map((t: TransactionRow) => {
+    return {
+      type: t.type,
+      category: t.category,
+      amount: num(t.amount),
+      transaction_date: t.transaction_date,
+    };
+  });
+  const intelligenceBudgets: IntelligenceBudgetItem[] = budgetItems.map((b) => ({
+    category: b.category,
+    limitAmount: b.limitAmount,
+    spent: b.spent,
+    percentage: b.percentage,
+  }));
+  const intelligenceGoals: IntelligenceGoalItem[] = goalItems.map((g) => ({
+    name: g.name,
+    targetAmount: g.targetAmount,
+    currentSavings: g.currentSavings,
+    deadline: g.deadline,
+    isAchieved: g.currentSavings >= g.targetAmount,
+    requiredMonthlyContribution: g.requiredMonthlyContribution,
+  }));
+  const intelligence = buildFinancialIntelligence({
+    transactions: intelligenceTxRows,
+    budgets: intelligenceBudgets,
+    goals: intelligenceGoals,
+    assessment:
+      assessment.available && assessment.input && assessment.metrics && assessment.capturedAt
+        ? {
+            input: assessment.input,
+            metrics: assessment.metrics,
+            capturedAt: assessment.capturedAt,
+          }
+        : null,
+    now,
+  });
+
   const sufficiency: DataSufficiency =
     assessment.available || transactions.available
       ? "sufficient"
@@ -253,7 +305,7 @@ export async function buildFinancialContext(
         ? "partial"
         : "insufficient";
 
-  return { assessment, transactions, budgets, debts, goals, sufficiency };
+  return { assessment, transactions, budgets, debts, goals, intelligence, sufficiency };
 }
 
 // ─── Rendering: context → Indonesian text block for the AI ────
@@ -353,6 +405,108 @@ export function formatFinancialContext(ctx: FinancialContext): string {
     }
   } else {
     lines.push(`   ${NOT_PROVIDED} — pengguna belum membuat tujuan keuangan.`);
+  }
+  lines.push("");
+
+  lines.push("6) ANALISIS INTELLIGENCE ENGINE (dihitung deterministik dari riwayat transaksi nyata 6 bulan terakhir — JANGAN hitung ulang, JANGAN menambahkan angka lain):");
+  const intel = ctx.intelligence;
+  if (!intel.available) {
+    lines.push("   BELUM TERSEDIO — belum ada transaksi tercatat dalam 6 bulan terakhir.");
+  } else {
+    lines.push(
+      `   Bulan lengkap teranalisis: ${intel.completedMonthsAnalyzed} (window ${intel.dataWindowMonths} bulan). Bulan berjalan tidak dihitung sebagai bulan lengkap.`
+    );
+    for (const m of intel.months) {
+      lines.push(
+        `   - ${m.monthKey}: pemasukan ${rp(m.income)}, pengeluaran ${rp(m.expenses)}, arus kas ${rp(m.cashFlow)} (${m.transactionCount} transaksi)${m.isCurrentMonth ? " [bulan berjalan]" : ""}`
+      );
+    }
+
+    lines.push("   a) Analisis pemasukan & pengeluaran:");
+    if (intel.incomeExpense.available) {
+      const ie = intel.incomeExpense;
+      const trend = (t: string | null) =>
+        t === "up" ? "meningkat" : t === "down" ? "menurun" : t === "stable" ? "stabil" : "tidak diketahui";
+      lines.push(`      - Rata-rata pemasukan/bulan: ${rp(ie.avgMonthlyIncome ?? 0)} (tren: ${trend(ie.incomeTrend)})`);
+      lines.push(`      - Rata-rata pengeluaran/bulan: ${rp(ie.avgMonthlyExpenses ?? 0)} (tren: ${trend(ie.expenseTrend)})`);
+      lines.push(`      - Rata-rata arus kas/bulan: ${rp(ie.avgMonthlyCashFlow ?? 0)}`);
+    } else {
+      lines.push(`      - ${intel.incomeExpense.reason}`);
+    }
+
+    lines.push("   b) Analisis kategori pengeluaran (6 bulan):");
+    if (intel.categories.available) {
+      for (const c of intel.categories.items) {
+        const mom =
+          c.changePct === null
+            ? "perubahan bulan-ke-bulan tidak dapat dihitung"
+            : c.changePct >= 0
+              ? `+${c.changePct}% vs bulan sebelumnya`
+              : `${c.changePct}% vs bulan sebelumnya`;
+        lines.push(
+          `      - ${c.category}: total ${rp(c.total)}, rata-rata ${rp(c.monthlyAverage)}/bulan, ${c.shareOfExpenses}% dari pengeluaran, ${c.isEssential ? "kebutuhan pokok" : c.isDebtRelated ? "terkait utang" : "non-kebutuhan pokok"}, ${mom}`
+        );
+      }
+    } else {
+      lines.push(`      - ${intel.categories.reason}`);
+    }
+
+    lines.push("   c) Deteksi overbudgeting:");
+    if (intel.overspending.alerts.length > 0) {
+      for (const a of intel.overspending.alerts) {
+        lines.push(`      - [${a.severity === "critical" ? "KRITIS" : "PERHATIAN"}] ${a.detail}`);
+      }
+    } else {
+      lines.push("      - Tidak ada peringatan: tidak ada anggaran terlampaui atau lonjakan kategori terdeteksi.");
+    }
+
+    lines.push("   d) Kapasitas menabung:");
+    if (intel.savingCapacity.available) {
+      const sc = intel.savingCapacity;
+      lines.push(
+        `      - Rata-rata surplus: ${rp(sc.avgMonthlySurplus ?? 0)}/bulan, rasio tabungan ${sc.savingsRatePct ?? 0}%, bulan dengan arus kas positif: ${sc.positiveCashFlowMonths ?? 0}/${sc.completedMonthsAnalyzed}`
+      );
+    } else {
+      lines.push(`      - ${intel.savingCapacity.reason}`);
+    }
+
+    lines.push("   e) Analisis tujuan keuangan:");
+    if (intel.goalFeasibility.available) {
+      for (const g of intel.goalFeasibility.items) {
+        lines.push(`      - ${g.name}: ${g.note}`);
+      }
+    } else {
+      lines.push(`      - ${intel.goalFeasibility.reason}`);
+    }
+
+    lines.push("   f) Proyeksi bulan depan:");
+    if (intel.forecast.available) {
+      const f = intel.forecast;
+      lines.push(
+        `      - Metode: ${f.method}; keyakinan: ${f.confidence}. Proyeksi pemasukan ${rp(f.projectedIncome ?? 0)}, pengeluaran ${rp(f.projectedExpenses ?? 0)}, arus kas ${rp(f.projectedCashFlow ?? 0)}. Sampaikan sebagai perkiraan, bukan jaminan.`
+      );
+    } else {
+      lines.push(`      - ${intel.forecast.reason}`);
+    }
+
+    lines.push("   g) Penilaian kesehatan keuangan (skor internal, JANGAN sebutkan angka skor ke pengguna kecuali diminta):");
+    if (intel.health.available) {
+      lines.push(`      - Skor: ${intel.health.score}/100 (${intel.health.status === "good" ? "sehat" : intel.health.status === "warning" ? "perlu perhatian" : "bermasalah"})`);
+      for (const c of intel.health.components) {
+        lines.push(`      - Komponen ${c.label}: ${c.earned}/${c.max} — ${c.note}`);
+      }
+    } else {
+      lines.push(`      - ${intel.health.reason}`);
+    }
+
+    lines.push("   h) Rekomendasi personal (berbasis perhitungan di atas, sampaikan dengan bahasa Anda sendiri):");
+    if (intel.recommendations.available) {
+      for (const r of intel.recommendations.items) {
+        lines.push(`      - [prioritas ${r.priority}] ${r.title}: ${r.detail}`);
+      }
+    } else {
+      lines.push("      - Belum ada rekomendasi yang dapat dihasilkan.");
+    }
   }
   lines.push("");
 

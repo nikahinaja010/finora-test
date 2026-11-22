@@ -5,6 +5,7 @@
 // NEVER represented as zero — it is marked not_provided / insufficient_data.
 
 import type { AssessmentMetrics } from "./financialCalculations.ts";
+import type { FinancialIntelligence } from "./intelligence.ts";
 
 export type DataSufficiency = "sufficient" | "partial" | "insufficient";
 
@@ -101,6 +102,8 @@ export interface FinancialContext {
   budgets: BudgetsContext;
   debts: DebtsContext;
   goals: GoalsContext;
+  /** Deterministic intelligence engine output over real transaction history. */
+  intelligence: FinancialIntelligence;
   /**
    * sufficient: assessment exists or there is recent transaction data.
    * partial: some data exists but not enough for a full health conclusion.
