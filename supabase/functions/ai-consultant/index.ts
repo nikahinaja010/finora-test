@@ -24,8 +24,10 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 import { AiProviderError } from "../_shared/ai/errors.ts";
-import { chatWithRouting } from "../_shared/ai/router.ts";
+import { chatWithRouting, routeForTask, executeWithFallback, classifyQuestion } from "../_shared/ai/router.ts";
 import type { AiChatResponse, AiMessage } from "../_shared/ai/types.ts";
+import { isSpecialistId, getSpecialist } from "../_shared/ai/specialists.ts";
+import type { SpecialistId } from "../_shared/ai/specialists.ts";
 import { buildFinancialContext, formatFinancialContext } from "../_shared/financial/builder.ts";
 
 const corsHeaders = {
@@ -127,7 +129,7 @@ async function consumeAiUsage(
   );
   return null;
 }
-const SYSTEM_PROMPT = `Anda adalah Konsultan Keuangan AI Finora — asisten keuangan pribadi yang membantu pengguna berbahasa Indonesia.
+const BASE_SYSTEM_PROMPT = `Anda adalah Konsultan Keuangan AI Finora — asisten keuangan pribadi yang membantu pengguna berbahasa Indonesia.
 
 PRINSIP KERJA:
 1. Jawab selalu dalam bahasa Indonesia yang natural dan mudah dipahami.
@@ -148,6 +150,8 @@ DATA KEUANGAN PENGGUNA:
 - Jika pengguna menyebutkan angka sendiri dalam pesan, gunakan angka tersebut untuk diskusi, tetapi tetap arahkan perhitungan resmi ke fitur Analisis Keuangan.
 - Kemampuan analisis (kategori, tren, overbudgeting, kapasitas menabung, proyeksi, kesehatan, rekomendasi) hanya mencakup data yang tersedia. Jika bagian tertentu bertuliskan bahwa data belum cukup, sampaikan keterbatasan itu dengan jujur dan jangan mengarang angka, transaksi, atau prediksi untuk mengisi kekosongan.
 
+const SHARED_RULES_SUFFIX = `
+
 FORMAT JAWABAN:
 - Gunakan paragraf singkat dan jelas.
 - Untuk langkah-langkah, gunakan penomoran.
@@ -161,6 +165,9 @@ interface ChatRequest {
   /** Consent flag: when true, the backend attaches the user's verified
    *  financial context (read server-side from Supabase). */
   includeProfile?: boolean;
+  /** Specialist persona ID. Only the ID is accepted from the client — the
+   *  definition (instructions + task type) is looked up server-side. */
+  specialist?: SpecialistId;
 }
 
 const MAX_MESSAGE_LENGTH = 5_000;
@@ -204,8 +211,16 @@ function validateChatRequest(body: unknown): { body: ChatRequest; error: Respons
     includeProfile = raw.includeProfile;
   }
 
+  let specialist: SpecialistId | undefined;
+  if (raw.specialist !== undefined && raw.specialist !== null) {
+    if (!isSpecialistId(raw.specialist)) {
+      return { body: {} as ChatRequest, error: badRequest("Spesialis tidak dikenal") };
+    }
+    specialist = raw.specialist;
+  }
+
   return {
-    body: { message: raw.message, conversationId, includeProfile },
+    body: { message: raw.message, conversationId, includeProfile, specialist },
     error: null,
   };
 }
@@ -269,7 +284,12 @@ Deno.serve(async (req: Request) => {
 
     const { body: chatRequest, error: validationError } = validateChatRequest(rawBody);
     if (validationError) return validationError;
-    const { message, conversationId, includeProfile } = chatRequest;
+    const { message, conversationId, includeProfile, specialist: specialistId } = chatRequest;
+
+    // Specialist persona: server-side definition only. The client may name a
+    // specialist, never supply its instructions.
+    const specialist = specialistId ? getSpecialist(specialistId) : null;
+    const SYSTEM_PROMPT = BASE_SYSTEM_PROMPT + (specialist ? specialist.basePrompt : "") + SHARED_RULES_SUFFIX;
 
     // ─── 4. Get or create conversation ─────────────────────────
     let convId = conversationId;
@@ -370,10 +390,21 @@ Deno.serve(async (req: Request) => {
       mistral: Deno.env.get("MISTRAL_API_KEY"),
     };
 
+    // Route by the specialist's task type when one is selected; otherwise
+    // fall back to the standard classify-then-route behaviour. Both paths go
+    // through the same router, registry, fallback, and monitoring.
+    const task = specialist ? specialist.taskType : classifyQuestion(message);
+    const candidates = routeForTask(task, providerSecrets);
+    if (candidates.length === 0) {
+      throw new AiProviderError({
+        code: "authentication",
+        providerId: "router",
+        message: `No AI provider is configured for task "${task}".`,
+      });
+    }
+
     const aiResult: AiChatResponse & { fallbackTrail: string[] } =
-      await chatWithRouting({
-        message,
-        secrets: providerSecrets,
+      await executeWithFallback(candidates, {
         messages: messages as AiMessage[],
         maxOutputTokens: 1200,
         temperature: 0.7,
@@ -385,7 +416,7 @@ Deno.serve(async (req: Request) => {
 
     const reply = aiResult.text;
     console.log(
-      `AI request OK: user=${user.id} provider=${aiResult.providerId} model=${aiResult.model} latencyMs=${aiResult.latencyMs} fallback=${aiResult.fallbackTrail.length}`
+      `AI request OK: user=${user.id} specialist=${specialist?.id ?? "none"} task=${task} provider=${aiResult.providerId} model=${aiResult.model} latencyMs=${aiResult.latencyMs} fallback=${aiResult.fallbackTrail.length}`
     );
 
     // ─── 9. Save assistant message ─────────────────────────────

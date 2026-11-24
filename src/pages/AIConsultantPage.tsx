@@ -13,8 +13,25 @@ import {
   User as UserIcon,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useAIConsultant, type ChatMessage } from '@/hooks/useAIConsultant';
+import { useAIConsultant, SPECIALISTS, type ChatMessage, type SpecialistId } from '@/hooks/useAIConsultant';
 import { formatIDR } from '@/utils/format';
+import {
+  LineChart,
+  PieChart,
+  PiggyBank,
+  CreditCard,
+  Compass,
+  ChevronDown,
+  Check,
+} from 'lucide-react';
+
+const SPECIALIST_ICONS: Record<SpecialistId, typeof Bot> = {
+  'financial-analyst': LineChart,
+  'budget-planner': PieChart,
+  'savings-advisor': PiggyBank,
+  'debt-management': CreditCard,
+  'financial-coach': Compass,
+};
 
 const SUGGESTED_QUESTIONS = [
   'Bagaimana cara membuat anggaran bulanan yang efektif?',
@@ -43,6 +60,8 @@ export default function AIConsultantPage() {
 
   const [input, setInput] = useState('');
   const [includeProfile, setIncludeProfile] = useState(false);
+  const [specialist, setSpecialist] = useState<SpecialistId | null>(null);
+  const [showSpecialists, setShowSpecialists] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -76,6 +95,7 @@ export default function AIConsultantPage() {
       message: text,
       conversationId: activeConversationId ?? undefined,
       includeProfile,
+      specialist: specialist ?? undefined,
       session,
     });
   };
@@ -248,6 +268,75 @@ export default function AIConsultantPage() {
         {/* Input area */}
         <div className="px-4 sm:px-6 py-4 bg-white border-t border-gray-200">
           <div className="max-w-3xl mx-auto space-y-3">
+            {/* Specialist picker */}
+            <div className="relative">
+              <button
+                onClick={() => setShowSpecialists((v) => !v)}
+                disabled={sending}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-medium text-navy-700 transition-colors hover:border-emerald-300 disabled:opacity-60"
+              >
+                {specialist ? (
+                  <>
+                    {(() => {
+                      const Icon = SPECIALIST_ICONS[specialist];
+                      const info = SPECIALISTS.find((s) => s.id === specialist);
+                      return (
+                        <>
+                          <Icon className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>{info?.label}</span>
+                        </>
+                      );
+                    })()}
+                  </>
+                ) : (
+                  <Compass className="w-3.5 h-3.5 text-gray-400" />
+                )}
+                <span>{specialist ? SPECIALISTS.find((s) => s.id === specialist)?.label : 'Konsultan Umum'}</span>
+                <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+              </button>
+              {showSpecialists && (
+                <div className="absolute bottom-full mb-2 left-0 z-20 w-72 rounded-2xl bg-white border border-gray-100 shadow-card-lg p-2">
+                  <button
+                    onClick={() => {
+                      setSpecialist(null);
+                      setShowSpecialists(false);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left transition-colors hover:bg-gray-50"
+                  >
+                    <Bot className="w-4 h-4 text-gray-400 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-navy-900">Konsultan Umum</p>
+                      <p className="text-xs text-gray-400">Topik keuangan apa saja</p>
+                    </div>
+                    {specialist === null && <Check className="w-4 h-4 text-emerald-600" />}
+                  </button>
+                  {SPECIALISTS.map((s) => {
+                    const Icon = SPECIALIST_ICONS[s.id];
+                    const active = specialist === s.id;
+                    return (
+                      <button
+                        key={s.id}
+                        onClick={() => {
+                          setSpecialist(s.id);
+                          setShowSpecialists(false);
+                        }}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left transition-colors ${
+                          active ? 'bg-emerald-50' : 'hover:bg-gray-50'
+                        }`}
+                      >
+                        <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-emerald-600' : 'text-gray-400'}`} />
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-semibold ${active ? 'text-emerald-700' : 'text-navy-900'}`}>{s.label}</p>
+                          <p className="text-xs text-gray-400 truncate">{s.tagline}</p>
+                        </div>
+                        {active && <Check className="w-4 h-4 text-emerald-600" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             {/* Consent toggle */}
             <label className="flex items-center gap-2.5 cursor-pointer group">
               <div className="relative">

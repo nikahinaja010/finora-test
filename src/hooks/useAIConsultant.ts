@@ -16,10 +16,33 @@ export interface Conversation {
   updated_at: string;
 }
 
+export type SpecialistId =
+  | 'financial-analyst'
+  | 'budget-planner'
+  | 'savings-advisor'
+  | 'debt-management'
+  | 'financial-coach';
+
+export interface SpecialistInfo {
+  id: SpecialistId;
+  label: string;
+  tagline: string;
+}
+
+/** Mirrors the server-side registry in specialists.ts — labels only, for UI. */
+export const SPECIALISTS: SpecialistInfo[] = [
+  { id: 'financial-analyst', label: 'Analis Keuangan', tagline: 'Analisis pemasukan, pengeluaran, tren & kesehatan keuangan' },
+  { id: 'budget-planner', label: 'Perencana Anggaran', tagline: 'Penyusunan & evaluasi anggaran bulanan' },
+  { id: 'savings-advisor', label: 'Penasihat Tabungan', tagline: 'Strategi tabungan & pencapaian target finansial' },
+  { id: 'debt-management', label: 'Ahli Utang', tagline: 'Analisis utang & strategi pelunasan' },
+  { id: 'financial-coach', label: 'Pelatih Keuangan', tagline: 'Edukasi & pendampingan keuangan pribadi' },
+];
+
 interface SendOptions {
   message: string;
   conversationId?: string;
   includeProfile: boolean;
+  specialist?: SpecialistId;
   session: Session | null;
 }
 
@@ -108,6 +131,7 @@ export function useAIConsultant() {
           message: opts.message,
           conversationId: opts.conversationId,
           includeProfile: opts.includeProfile,
+          specialist: opts.specialist,
         }),
       });
 

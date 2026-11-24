@@ -2,8 +2,8 @@
   "projectId": "73140399",
   "functions": {
     "ai-consultant": {
-      "hasChanged": false,
-      "hash": "2b2dc29d73a1aaa6c527efe9b2567d6ec2c76ff009cfcbf56a1dabfb8a4de42bc37bf0db5ed973f8f966287642d15f21bf333559a071659fb1cda54f2310e530"
+      "hasChanged": true,
+      "hash": "6e48f23b96961099f3fbd39912dcdc500c2924dcd8dfbea31b6e975ed5a8cfae9c9716fa80b941f22feb7a2c50bb9b482eecc6083c5091b16ca1735f4026e5b1"
     }
   }
 }
