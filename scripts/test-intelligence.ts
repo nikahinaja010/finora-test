@@ -58,12 +58,13 @@ expect(ie.available && ie.avgMonthlyExpenses === 2_660_000, `avgExpenses=${ie.av
 expect(ie.available && ie.avgMonthlyCashFlow === 2_740_000, `avgCashFlow=${ie.avgMonthlyCashFlow}, expected 2_740_000`);
 expect(ie.incomeTrend === "up" && ie.expenseTrend === "up", `trends=${ie.incomeTrend}/${ie.expenseTrend}, expected up/up`);
 
-// Categories: Makanan total = 1.5+1.6+1.7+1.8+2+0.9 = 9.5M; share = 9.5/13.3 = 71.4% -> 71
+// Categories: window totals include the current partial month by design.
+// Makanan = 1.5+1.6+1.7+1.8+2+0.9 = 9.5M of 14.5M total -> 65.5% -> 66
 const cats = result.categories;
 const makanan = cats.items.find((c) => c.category === "Makanan");
-expect(cats.totalExpenses === 13_300_000, `totalExpenses=${cats.totalExpenses}, expected 13_300_000`);
+expect(cats.totalExpenses === 14_500_000, `totalExpenses=${cats.totalExpenses}, expected 14_500_000`);
 expect(makanan?.total === 9_500_000, `makanan total=${makanan?.total}, expected 9_500_000`);
-expect(makanan?.shareOfExpenses === 71, `makanan share=${makanan?.shareOfExpenses}, expected 71`);
+expect(makanan?.shareOfExpenses === 66, `makanan share=${makanan?.shareOfExpenses}, expected 66`);
 expect(makanan?.isEssential === true, "makanan should be essential");
 const hiburan = cats.items.find((c) => c.category === "Hiburan");
 expect(hiburan?.isEssential === false, "hiburan should be non-essential");
@@ -85,11 +86,12 @@ expect(sc.positiveCashFlowMonths === 5, `positiveMonths=${sc.positiveCashFlowMon
 const fc = result.forecast;
 expect(fc.available && fc.confidence === "medium", `forecast available=${fc.available}, confidence=${fc.confidence}`);
 expect(fc.projectedIncome === 5_666_667, `projectedIncome=${fc.projectedIncome}, expected 5_666_667`);
-expect(fc.projectedExpenses === 2_666_667, `projectedExpenses=${fc.projectedExpenses}, expected 2_666_667`);
+expect(fc.projectedExpenses === 3_000_000, `projectedExpenses=${fc.projectedExpenses}, expected 3_000_000`);
+expect(fc.projectedCashFlow === 2_666_667, `projectedCashFlow=${fc.projectedCashFlow}, expected 2_666_667`);
 
-// Health: no assessment -> max 75. savings rate 51>=20 ->25; discretionary share = 3.8/13.3=28.6%<=30 ->25; cf>0 ->25. score=75/75=100
+// Health: no assessment -> max 75. savings 25; discretionary share = 5.0/14.5 = 34.5% (>30, <=50) -> 15; cf>0 -> 25. Score = 65/75 = 87
 const h = result.health;
-expect(h.available && h.score === 100, `health score=${h.score}, expected 100`);
+expect(h.available && h.score === 87, `health score=${h.score}, expected 87`);
 expect(h.status === "good", `health status=${h.status}`);
 
 // Goal feasibility: required 888,889 <= 2,740,000 surplus -> feasible

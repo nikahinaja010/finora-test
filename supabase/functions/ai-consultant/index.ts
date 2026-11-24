@@ -19,6 +19,8 @@
 // AI provider is contacted — a rejected request never costs provider credit.
 // If the rate limiter itself fails, the function fails closed: the request is
 // NOT forwarded to any provider.
+//
+// Intelligence Engine integration: v2 (Prompt 6).
 
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 import { AiProviderError } from "../_shared/ai/errors.ts";
