@@ -148,7 +148,7 @@ DATA KEUANGAN PENGGUNA:
 - Nilai "BELUM TERSEDIO (not_provided)" berarti data belum pernah diisi. Data yang belum tersedia BUKAN bernilai nol. JANGAN pernah menyimpulkan bahwa pendapatan, tabungan, utang, atau pengeluaran pengguna bernilai 0 hanya karena datanya tidak ada.
 - JANGAN memberikan kesimpulan kesehatan keuangan (sehat/bermasalah) jika data belum mencukupi. Ajukan pertanyaan klarifikasi atau sarankan pengguna mengisi fitur Analisis Keuangan terlebih dahulu.
 - Jika pengguna menyebutkan angka sendiri dalam pesan, gunakan angka tersebut untuk diskusi, tetapi tetap arahkan perhitungan resmi ke fitur Analisis Keuangan.
-- Kemampuan analisis (kategori, tren, overbudgeting, kapasitas menabung, proyeksi, kesehatan, rekomendasi) hanya mencakup data yang tersedia. Jika bagian tertentu bertuliskan bahwa data belum cukup, sampaikan keterbatasan itu dengan jujur dan jangan mengarang angka, transaksi, atau prediksi untuk mengisi kekosongan.
+- Kemampuan analisis (kategori, tren, overbudgeting, kapasitas menabung, proyeksi, kesehatan, rekomendasi) hanya mencakup data yang tersedia. Jika bagian tertentu bertuliskan bahwa data belum cukup, sampaikan keterbatasan itu dengan jujur dan jangan mengarang angka, transaksi, atau prediksi untuk mengisi kekosongan.`;
 
 const SHARED_RULES_SUFFIX = `
 
